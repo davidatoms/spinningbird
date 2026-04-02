@@ -42,9 +42,11 @@
   const SIZE = 28; // square side length
 
   let state = 'idle';
+  let paused = false;
   let score = 0;
   let best = 0;
   let frame = 0;
+  let flapDots = []; // { x, y, life, maxLife }
 
   const bird = {
     x: 80,
@@ -285,12 +287,28 @@
     }
   }
 
+  function spawnFlapDot() {
+    flapDots.push({ x: bird.x, y: bird.y });
+  }
+
+  function updateFlapDots() {}
+
+  function drawFlapDots() {
+    flapDots.forEach(d => {
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
   function handleInput() {
     if (state === 'idle') {
       state = 'playing';
       frame = 0;
     } else if (state === 'playing') {
       bird.jump();
+      spawnFlapDot();
     } else if (state === 'dead') {
       reset();
     }
@@ -301,6 +319,9 @@
       e.preventDefault();
       handleInput();
     }
+    if (e.code === 'KeyP' && state === 'playing') {
+      paused = !paused;
+    }
   });
   canvas.addEventListener('click', handleInput);
   canvas.addEventListener('touchstart', e => { e.preventDefault(); handleInput(); }, { passive: false });
@@ -308,18 +329,21 @@
   function reset() {
     bird.reset();
     pipes = [];
+    flapDots = [];
     score = 0;
     frame = 0;
     state = 'playing';
   }
 
   function loop() {
-    frame++;
-    bird.update();
-    updateClouds();
+    if (!paused) {
+      frame++;
+      bird.update();
+      updateClouds();
+      updateFlapDots();
 
-    if (state === 'playing') {
-      updatePipes();
+      if (state === 'playing') {
+        updatePipes();
 
       pipes.forEach(p => {
         if (!p.scored && p.x + PIPE_WIDTH < bird.x) {
@@ -331,12 +355,40 @@
 
       if (checkCollision()) state = 'dead';
     }
+    } // end !paused
 
     drawSky();
     drawClouds();
     pipes.forEach(drawPipe);
     drawGround();
+    drawFlapDots();
     bird.draw();
+
+    // Drop line when paused
+    if (paused) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(bird.x, bird.y);
+      ctx.lineTo(bird.x, SKY_HEIGHT);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Dot at the landing point
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.arc(bird.x, SKY_HEIGHT, 4, 0, Math.PI * 2);
+      ctx.fill();
+      // PAUSED label
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(bird.x + 10, bird.y - 14, 58, 20);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 13px Arial';
+      ctx.textAlign = 'left';
+      ctx.fillText('PAUSED', bird.x + 14, bird.y + 1);
+      ctx.restore();
+    }
 
     if (state === 'playing') drawScore();
     if (state !== 'playing') drawOverlay();
