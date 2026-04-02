@@ -102,10 +102,14 @@
   let pipes = [];
 
   function spawnPipe() {
-    const minTop = 80;
-    const maxTop = SKY_HEIGHT - PIPE_GAP - 80;
-    const topH = Math.random() * (maxTop - minTop) + minTop;
-    pipes.push({ x: canvas.width, topH, scored: false });
+    // Snap to CELL grid so pipe edges align with Conway cells
+    const minTop = Math.ceil(80 / CELL) * CELL;
+    const maxTop = Math.floor((SKY_HEIGHT - PIPE_GAP - 80) / CELL) * CELL;
+    const steps  = (maxTop - minTop) / CELL;
+    const topH   = minTop + Math.floor(Math.random() * (steps + 1)) * CELL;
+    // Snap start x to grid
+    const startX = Math.ceil(canvas.width / CELL) * CELL;
+    pipes.push({ x: startX, topH, scored: false });
   }
 
   function updatePipes() {
