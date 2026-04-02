@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flappy Bird Spin</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1a2e;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      font-family: 'Arial', sans-serif;
+    }
+    canvas {
+      display: block;
+      border: 3px solid #333;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+
+  canvas.width = 360;
+  canvas.height = 640;
+
+  // --- Constants ---
+  const GRAVITY = 0.45;
+  const JUMP = -8.5;
+  const PIPE_WIDTH = 60;
+  const PIPE_GAP = 160;
+  const PIPE_SPEED = 2.5;
+  const PIPE_INTERVAL = 90;
+  const GROUND_HEIGHT = 80;
+  const SKY_HEIGHT = canvas.height - GROUND_HEIGHT;
+
+  // Barrel roll config
+  const BASE_ROLL_SPEED = 0.07;   // base radians/frame around Z (forward axis illusion)
+  const JUMP_ROLL_BOOST = 0.18;   // extra spin burst on flap
+  const ROLL_DECAY = 0.94;        // how fast the boost decays
+
+  // --- State ---
+  let state = 'idle';
+  let score = 0;
+  let best = 0;
+  let frame = 0;
+
+  // --- Bird ---
+  const bird = {
+    x: 80,
+    y: canvas.height / 2 - 20,
+    vy: 0,
+    w: 34,
+    h: 24,
+    pitchAngle: 0,      // tilt based on velocity (nose up/down)
+    rollAngle: 0,       // barrel roll around forward axis (simulated via scaleY)
+    rollSpeed: BASE_ROLL_SPEED,
+    reset() {
+      this.y = canvas.height / 2 - 20;
+      this.vy = 0;
+      this.pitchAngle = 0;
+      this.rollAngle = 0;
+      this.rollSpeed = BASE_ROLL_SPEED;
+    },
+    jump() {
+      this.vy = JUMP;
+      this.rollSpeed = JUMP_ROLL_BOOST; // burst of spin on flap
+    },
+    update() {
+      if (state === 'playing') {
+        this.vy += GRAVITY;
+        this.y += this.vy;
+        this.pitchAngle = Math.min(Math.PI / 2, Math.max(-0.4, this.vy * 0.07));
+        // Decay roll speed back toward base
+        this.rollSpeed = this.rollSpeed * ROLL_DECAY + BASE_ROLL_SPEED * (1 - ROLL_DECAY);
+      } else if (state === 'idle') {
+        this.y = canvas.height / 2 - 20 + Math.sin(frame * 0.05) * 8;
+        this.rollSpeed = BASE_ROLL_SPEED;
+      } else if (state === 'dead') {
+        // Keep spinning after death, speed up
+        this.rollSpeed = Math.min(this.rollSpeed + 0.008, 0.35);
+      }
+      this.rollAngle += this.rollSpeed;
+    },
+    hitbox() {
+      return { x: this.x - this.w / 2 + 5, y: this.y - this.h / 2 + 4, w: this.w - 10, h: this.h - 8 };
+    },
+    draw() {
+      ctx.save();
+      ctx.translate(this.x, this.y);
+
+      // Pitch: nose up/down from velocity
+      ctx.rotate(this.pitchAngle);
+
+      // Barrel roll: simulate by squishing scaleY with cos(rollAngle)
+      // and flipping the bird (mirror) on the back half of roll
+      const rollCos = Math.cos(this.rollAngle);
+      const rollSin = Math.sin(this.rollAngle); // used for wobble depth
+      const facingRight = rollCos >= 0; // front face vs back face
+
+      ctx.scale(1, rollCos); // squish vertically to simulate 3D roll
+
+      // Add a slight lateral wobble (x-axis sway) for depth feel
+      const sway = rollSin * 4;
+
+      // ---- Draw bird parts ----
+
+      // Shadow/depth ellipse behind for 3D feel
+      const absRoll = Math.abs(rollCos);
+      ctx.globalAlpha = (1 - absRoll) * 0.35;
+      ctx.fillStyle = '#2d3436';
+      ctx.beginPath();
+      ctx.ellipse(sway, 0, this.w / 2 + 3, this.h / 2 + 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // Body
+      ctx.fillStyle = facingRight ? '#f9ca24' : '#f0932b'; // slightly darker on the back
+      ctx.beginPath();
+      ctx.ellipse(sway, 0, this.w / 2, this.h / 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#e55039';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Wing — swings out perpendicular during roll (most visible at 90 degrees)
+      const wingExtend = Math.abs(rollSin) * 14; // wing pokes out at sides during roll
+      const wingY = Math.sin(frame * 0.35) * 5;  // gentle flap
+      ctx.fillStyle = '#e67e22';
+      // Top wing extends up during roll
+      ctx.beginPath();
+      ctx.ellipse(sway - 2, -wingExtend + wingY, 11, 6, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+      // Bottom wing extends down during roll
+      ctx.beginPath();
+      ctx.ellipse(sway - 2, wingExtend - wingY, 11, 6, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Only draw face details on front-facing pass
+      if (facingRight) {
+        // Eye white
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(sway + 8, -5, 7, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Pupil — moves with roll angle for a dizzy spinning eye effect
+        const pupilOffX = Math.cos(this.rollAngle * 2) * 2;
+        const pupilOffY = Math.sin(this.rollAngle * 2) * 2;
+        ctx.fillStyle = '#130f40';
+        ctx.beginPath();
+        ctx.arc(sway + 10 + pupilOffX, -4 + pupilOffY, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Dizzy stars around eye when spinning fast
+        if (this.rollSpeed > 0.12) {
+          const starCount = 3;
+          const starOrbit = 11;
+          ctx.fillStyle = '#fdcb6e';
+          for (let i = 0; i < starCount; i++) {
+            const a = this.rollAngle * 3 + (i / starCount) * Math.PI * 2;
+            const sx = sway + 8 + Math.cos(a) * starOrbit;
+            const sy = -5 + Math.sin(a) * starOrbit;
+            ctx.beginPath();
+            ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // Beak
+        ctx.fillStyle = '#e55039';
+        ctx.beginPath();
+        ctx.moveTo(sway + 14, -1);
+        ctx.lineTo(sway + 22, 2);
+        ctx.lineTo(sway + 14, 5);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        // Back of head — tail feathers
+        ctx.fillStyle = '#d35400';
+        ctx.beginPath();
+        ctx.moveTo(sway - 14, -6);
+        ctx.lineTo(sway - 22, -2);
+        ctx.lineTo(sway - 14, 2);
+        ctx.lineTo(sway - 18, 6);
+        ctx.lineTo(sway - 14, 5);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Motion blur streaks at high spin speed
+      if (this.rollSpeed > 0.15) {
+        const blurAlpha = Math.min((this.rollSpeed - 0.15) / 0.2, 0.4);
+        ctx.globalAlpha = blurAlpha;
+        ctx.strokeStyle = '#f9ca24';
+        ctx.lineWidth = 3;
+        for (let i = 1; i <= 3; i++) {
+          const pastAngle = -(this.rollSpeed * i * 4);
+          ctx.save();
+          ctx.rotate(pastAngle);
+          ctx.beginPath();
+          ctx.ellipse(sway, 0, this.w / 2 - 2, this.h / 2 - 2, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      ctx.restore();
+    }
+  };
+
+  // --- Pipes ---
+  let pipes = [];
+
+  function spawnPipe() {
+    const minTop = 80;
+    const maxTop = SKY_HEIGHT - PIPE_GAP - 80;
+    const topH = Math.random() * (maxTop - minTop) + minTop;
+    pipes.push({ x: canvas.width, topH, scored: false });
+  }
+
+  function updatePipes() {
+    if (frame % PIPE_INTERVAL === 0) spawnPipe();
+    pipes.forEach(p => p.x -= PIPE_SPEED);
+    pipes = pipes.filter(p => p.x + PIPE_WIDTH > -10);
+  }
+
+  // --- Clouds ---
+  const clouds = Array.from({ length: 5 }, (_, i) => ({
+    x: i * 90 + 30,
+    y: 40 + Math.random() * 100,
+    r: 20 + Math.random() * 20,
+    speed: 0.3 + Math.random() * 0.3
+  }));
+
+  function updateClouds() {
+    clouds.forEach(c => {
+      c.x -= c.speed;
+      if (c.x + c.r * 2 < 0) c.x = canvas.width + c.r;
+    });
+  }
+
+  let groundX = 0;
+
+  // --- Collision ---
+  function checkCollision() {
+    const hb = bird.hitbox();
+    if (bird.y + bird.h / 2 >= SKY_HEIGHT || bird.y - bird.h / 2 <= 0) return true;
+    for (const p of pipes) {
+      if (hb.x < p.x + PIPE_WIDTH && hb.x + hb.w > p.x) {
+        if (hb.y < p.topH || hb.y + hb.h > p.topH + PIPE_GAP) return true;
+      }
+    }
+    return false;
+  }
+
+  // --- Draw helpers ---
+  function drawSky() {
+    const grad = ctx.createLinearGradient(0, 0, 0, SKY_HEIGHT);
+    grad.addColorStop(0, '#74b9ff');
+    grad.addColorStop(1, '#a29bfe');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, SKY_HEIGHT);
+  }
+
+  function drawClouds() {
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    clouds.forEach(c => {
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+      ctx.arc(c.x + c.r * 0.7, c.y - c.r * 0.4, c.r * 0.75, 0, Math.PI * 2);
+      ctx.arc(c.x + c.r * 1.4, c.y, c.r * 0.85, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  function drawPipe(p) {
+    const capH = 18;
+    const capW = PIPE_WIDTH + 10;
+
+    ctx.fillStyle = '#00b894';
+    ctx.fillRect(p.x, 0, PIPE_WIDTH, p.topH - capH);
+    ctx.fillStyle = '#00cec9';
+    ctx.fillRect(p.x - 5, p.topH - capH, capW, capH);
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.fillRect(p.x + PIPE_WIDTH - 10, 0, 10, p.topH - capH);
+
+    const botY = p.topH + PIPE_GAP;
+    ctx.fillStyle = '#00b894';
+    ctx.fillRect(p.x, botY + capH, PIPE_WIDTH, SKY_HEIGHT - botY - capH);
+    ctx.fillStyle = '#00cec9';
+    ctx.fillRect(p.x - 5, botY, capW, capH);
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.fillRect(p.x + PIPE_WIDTH - 10, botY + capH, 10, SKY_HEIGHT - botY - capH);
+  }
+
+  function drawGround() {
+    if (state === 'playing') {
+      groundX -= PIPE_SPEED;
+      if (groundX <= -20) groundX = 0;
+    }
+
+    const grad = ctx.createLinearGradient(0, SKY_HEIGHT, 0, canvas.height);
+    grad.addColorStop(0, '#fdcb6e');
+    grad.addColorStop(1, '#e17055');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, SKY_HEIGHT, canvas.width, GROUND_HEIGHT);
+
+    ctx.fillStyle = '#55efc4';
+    ctx.fillRect(0, SKY_HEIGHT, canvas.width, 14);
+
+    ctx.fillStyle = '#00b894';
+    for (let gx = groundX; gx < canvas.width; gx += 20) {
+      ctx.fillRect(gx, SKY_HEIGHT, 12, 7);
+    }
+  }
+
+  function drawScore() {
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#2d3436';
+    ctx.lineWidth = 4;
+    ctx.font = 'bold 42px Arial';
+    ctx.strokeText(score, canvas.width / 2, 70);
+    ctx.fillText(score, canvas.width / 2, 70);
+  }
+
+  function drawOverlay() {
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath();
+    ctx.roundRect(canvas.width / 2 - 130, canvas.height / 2 - 140, 260, 290, 16);
+    ctx.fill();
+
+    ctx.textAlign = 'center';
+    if (state === 'idle') {
+      ctx.fillStyle = '#fdcb6e';
+      ctx.font = 'bold 34px Arial';
+      ctx.fillText('FLAPPY BIRD', canvas.width / 2, canvas.height / 2 - 85);
+      ctx.fillStyle = '#a29bfe';
+      ctx.font = 'bold 20px Arial';
+      ctx.fillText('BARREL ROLL EDITION', canvas.width / 2, canvas.height / 2 - 55);
+      ctx.fillStyle = '#fff';
+      ctx.font = '19px Arial';
+      ctx.fillText('Press SPACE or tap', canvas.width / 2, canvas.height / 2 - 5);
+      ctx.fillText('to start!', canvas.width / 2, canvas.height / 2 + 25);
+      ctx.fillStyle = '#dfe6e9';
+      ctx.font = '15px Arial';
+      ctx.fillText('Each flap triggers a spin burst', canvas.width / 2, canvas.height / 2 + 65);
+    } else if (state === 'dead') {
+      ctx.fillStyle = '#e17055';
+      ctx.font = 'bold 36px Arial';
+      ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 90);
+
+      ctx.fillStyle = '#fff';
+      ctx.font = '22px Arial';
+      ctx.fillText('Score: ' + score, canvas.width / 2, canvas.height / 2 - 38);
+      ctx.fillStyle = '#fdcb6e';
+      ctx.fillText('Best: ' + best, canvas.width / 2, canvas.height / 2 + 0);
+
+      ctx.fillStyle = '#dfe6e9';
+      ctx.font = '18px Arial';
+      ctx.fillText('Press SPACE or tap', canvas.width / 2, canvas.height / 2 + 55);
+      ctx.fillText('to play again', canvas.width / 2, canvas.height / 2 + 80);
+    }
+  }
+
+  // --- Input ---
+  function handleInput() {
+    if (state === 'idle') {
+      state = 'playing';
+      frame = 0;
+    } else if (state === 'playing') {
+      bird.jump();
+    } else if (state === 'dead') {
+      reset();
+    }
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space' || e.code === 'ArrowUp') {
+      e.preventDefault();
+      handleInput();
+    }
+  });
+  canvas.addEventListener('click', handleInput);
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); handleInput(); }, { passive: false });
+
+  // --- Reset ---
+  function reset() {
+    bird.reset();
+    pipes = [];
+    score = 0;
+    frame = 0;
+    state = 'playing';
+  }
+
+  // --- Main loop ---
+  function loop() {
+    frame++;
+    bird.update();
+    updateClouds();
+
+    if (state === 'playing') {
+      updatePipes();
+
+      pipes.forEach(p => {
+        if (!p.scored && p.x + PIPE_WIDTH < bird.x) {
+          p.scored = true;
+          score++;
+          if (score > best) best = score;
+        }
+      });
+
+      if (checkCollision()) {
+        state = 'dead';
+      }
+    }
+
+    drawSky();
+    drawClouds();
+    pipes.forEach(drawPipe);
+    drawGround();
+    bird.draw();
+
+    if (state === 'playing') drawScore();
+    if (state !== 'playing') drawOverlay();
+
+    requestAnimationFrame(loop);
+  }
+
+  loop();
+</script>
+</body>
+</html>
