@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conway's Game of Life</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1a2e;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Arial', sans-serif;
+      color: #fff;
+      gap: 12px;
+    }
+    h1 {
+      font-size: 18px;
+      letter-spacing: 2px;
+      color: #93b8d8;
+      text-transform: uppercase;
+    }
+    canvas {
+      border: 2px solid #2d3436;
+      cursor: crosshair;
+      display: block;
+    }
+    #controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    button {
+      background: #2d3436;
+      color: #fff;
+      border: 1px solid #636e72;
+      padding: 7px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.15s;
+    }
+    button:hover { background: #636e72; }
+    button.active { background: #00b894; border-color: #00b894; }
+    #info {
+      font-size: 12px;
+      color: #636e72;
+      display: flex;
+      gap: 24px;
+    }
+    #info span { color: #93b8d8; }
+    label {
+      font-size: 13px;
+      color: #dfe6e9;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    input[type=range] { width: 80px; }
+  </style>
+</head>
+<body>
+  <h1>Conway's Game of Life</h1>
+  <canvas id="c"></canvas>
+  <div id="controls">
+    <button id="btnPlay" class="active">Pause</button>
+    <button id="btnStep">Step</button>
+    <button id="btnRandom">Randomize</button>
+    <button id="btnClear">Clear</button>
+    <label>Speed <input type="range" id="speed" min="1" max="30" value="12"></label>
+    <label>Size <input type="range" id="cellSize" min="4" max="30" value="12"></label>
+  </div>
+  <div id="info">
+    Generation: <span id="genCount">0</span>
+    &nbsp;|&nbsp; Live cells: <span id="liveCount">0</span>
+    &nbsp;|&nbsp; Click or drag to draw
+  </div>
+
+<script>
+  const canvas = document.getElementById('c');
+  const ctx    = canvas.getContext('2d');
+
+  let CELL = 12;
+  let COLS, ROWS, grid, next;
+  let running = true;
+  let generation = 0;
+  let speed = 12;         // target updates per second
+  let lastStep = 0;
+  let painting = null;    // null | 1 | 0 (what we're drawing when dragging)
+
+  // --- Grid helpers ---
+  function initGrid() {
+    COLS = Math.floor(canvas.width  / CELL);
+    ROWS = Math.floor(canvas.height / CELL);
+    grid = Array.from({ length: ROWS }, () => new Uint8Array(COLS));
+    next = Array.from({ length: ROWS }, () => new Uint8Array(COLS));
+  }
+
+  function randomize(density = 0.3) {
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        grid[r][c] = Math.random() < density ? 1 : 0;
+    generation = 0;
+  }
+
+  function clear() {
+    for (let r = 0; r < ROWS; r++) grid[r].fill(0);
+    generation = 0;
+  }
+
+  function resize() {
+    const size = Math.min(window.innerWidth - 32, window.innerHeight - 160, 640);
+    canvas.width  = Math.floor(size / CELL) * CELL;
+    canvas.height = Math.floor(size / CELL) * CELL;
+    initGrid();
+    randomize();
+  }
+
+  // --- Conway step ---
+  function step() {
+    let live = 0;
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        let n = 0;
+        for (let dr = -1; dr <= 1; dr++)
+          for (let dc = -1; dc <= 1; dc++) {
+            if (dr === 0 && dc === 0) continue;
+            n += grid[(r + dr + ROWS) % ROWS][(c + dc + COLS) % COLS];
+          }
+        const alive = grid[r][c];
+        next[r][c] = (alive && (n === 2 || n === 3)) || (!alive && n === 3) ? 1 : 0;
+        live += next[r][c];
+      }
+    }
+    // Swap buffers
+    const tmp = grid; grid = next; next = tmp;
+    generation++;
+    document.getElementById('genCount').textContent  = generation;
+    document.getElementById('liveCount').textContent = live;
+  }
+
+  // --- Draw ---
+  function draw() {
+    ctx.fillStyle = '#fafaf7';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Live cells
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (grid[r][c]) {
+          // Age-tinted colour — we just use a flat colour for now
+          ctx.fillStyle = '#2d7dd2';
+          ctx.fillRect(c * CELL + 1, r * CELL + 1, CELL - 1, CELL - 1);
+        }
+      }
+    }
+
+    // Grid lines
+    ctx.beginPath();
+    ctx.strokeStyle = '#d0dde8';
+    ctx.lineWidth = 0.5;
+    for (let x = 0; x <= canvas.width;  x += CELL) { ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); }
+    for (let y = 0; y <= canvas.height; y += CELL) { ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); }
+    ctx.stroke();
+  }
+
+  // --- Main loop ---
+  function loop(ts) {
+    requestAnimationFrame(loop);
+    if (running) {
+      const interval = 1000 / speed;
+      if (ts - lastStep >= interval) {
+        step();
+        lastStep = ts;
+      }
+    }
+    draw();
+  }
+
+  // --- Input: draw cells ---
+  function cellAt(e) {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX ?? e.touches[0].clientX) - rect.left;
+    const y = (e.clientY ?? e.touches[0].clientY) - rect.top;
+    return [Math.floor(y / CELL), Math.floor(x / CELL)];
+  }
+
+  function paintCell(e) {
+    const [r, c] = cellAt(e);
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+    if (painting === null) painting = grid[r][c] ? 0 : 1;
+    grid[r][c] = painting;
+  }
+
+  canvas.addEventListener('mousedown',  e => { painting = null; paintCell(e); });
+  canvas.addEventListener('mousemove',  e => { if (e.buttons) paintCell(e); });
+  canvas.addEventListener('mouseup',    () => { painting = null; });
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); painting = null; paintCell(e); }, { passive: false });
+  canvas.addEventListener('touchmove',  e => { e.preventDefault(); paintCell(e); }, { passive: false });
+  canvas.addEventListener('touchend',   () => { painting = null; });
+
+  // --- Controls ---
+  document.getElementById('btnPlay').addEventListener('click', () => {
+    running = !running;
+    document.getElementById('btnPlay').textContent = running ? 'Pause' : 'Play';
+    document.getElementById('btnPlay').classList.toggle('active', running);
+  });
+  document.getElementById('btnStep').addEventListener('click', () => { running = false; document.getElementById('btnPlay').textContent = 'Play'; document.getElementById('btnPlay').classList.remove('active'); step(); });
+  document.getElementById('btnRandom').addEventListener('click', () => { randomize(); generation = 0; });
+  document.getElementById('btnClear').addEventListener('click', () => { clear(); });
+
+  document.getElementById('speed').addEventListener('input', e => { speed = +e.target.value; });
+  document.getElementById('cellSize').addEventListener('input', e => {
+    CELL = +e.target.value;
+    resize();
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); document.getElementById('btnPlay').click(); }
+    if (e.code === 'KeyS')  step();
+    if (e.code === 'KeyR')  randomize();
+    if (e.code === 'KeyC')  clear();
+  });
+
+  // --- Init ---
+  resize();
+  requestAnimationFrame(loop);
+</script>
+</body>
+</html>
