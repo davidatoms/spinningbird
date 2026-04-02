@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sequence Tap Bird</title>
+  <title>Moving Lines Square Bird</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -39,7 +39,7 @@
   const GROUND_HEIGHT = 80;
   const SKY_HEIGHT = canvas.height - GROUND_HEIGHT;
 
-  const SIZE = 28;
+  const SIZE = 28; // square side length
 
   let state = 'idle';
   let paused = false;
@@ -83,24 +83,29 @@
       const s = SIZE;
       const h = s / 2;
 
+      // Body — yellow square
       ctx.fillStyle = '#f9ca24';
       ctx.fillRect(-h, -h, s, s);
       ctx.strokeStyle = '#e55039';
       ctx.lineWidth = 2.5;
       ctx.strokeRect(-h, -h, s, s);
 
+      // Wing — small orange rectangle on bottom-left side
       ctx.fillStyle = '#f0932b';
       ctx.fillRect(-h - 8, 2, 10, 8);
       ctx.strokeStyle = '#e55039';
       ctx.lineWidth = 1.5;
       ctx.strokeRect(-h - 8, 2, 10, 8);
 
+      // Eye white — square eye
       ctx.fillStyle = '#fff';
       ctx.fillRect(4, -h + 4, 12, 12);
 
+      // Pupil — small square
       ctx.fillStyle = '#130f40';
       ctx.fillRect(8, -h + 7, 6, 6);
 
+      // Beak — triangle-ish using a rect poking out
       ctx.fillStyle = '#e55039';
       ctx.fillRect(h, -3, 8, 6);
 
@@ -159,6 +164,7 @@
   }
 
   function drawClouds() {
+    // Square clouds to match the vibe
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     clouds.forEach(c => {
       ctx.fillRect(c.x - c.r, c.y - c.r * 0.6, c.r * 2, c.r * 1.2);
@@ -168,40 +174,47 @@
   }
 
   function drawPipe(p) {
+    // Top gate — flat square block, no cap
     ctx.fillStyle = '#00b894';
     ctx.fillRect(p.x, 0, PIPE_WIDTH, p.topH);
     ctx.fillStyle = 'rgba(0,0,0,0.12)';
     ctx.fillRect(p.x + PIPE_WIDTH - 10, 0, 10, p.topH);
 
+    // Bottom gate — flat square block, no cap
     const botY = p.topH + PIPE_GAP;
     ctx.fillStyle = '#00b894';
     ctx.fillRect(p.x, botY, PIPE_WIDTH, SKY_HEIGHT - botY);
     ctx.fillStyle = 'rgba(0,0,0,0.12)';
     ctx.fillRect(p.x + PIPE_WIDTH - 10, botY, 10, SKY_HEIGHT - botY);
 
+    // Guide lines through the gap
     const midY = p.topH + PIPE_GAP / 2;
     const cx = p.x + PIPE_WIDTH / 2;
     ctx.save();
     ctx.lineWidth = 1.5;
     ctx.setLineDash([4, 4]);
 
+    // Left edge line
     ctx.strokeStyle = 'rgba(255,255,255,0.55)';
     ctx.beginPath();
     ctx.moveTo(p.x, p.topH);
     ctx.lineTo(p.x, botY);
     ctx.stroke();
 
+    // Center line
     ctx.beginPath();
     ctx.moveTo(cx, p.topH);
     ctx.lineTo(cx, botY);
     ctx.stroke();
 
+    // Right edge line
     ctx.beginPath();
     ctx.moveTo(p.x + PIPE_WIDTH, p.topH);
     ctx.lineTo(p.x + PIPE_WIDTH, botY);
     ctx.stroke();
 
     ctx.setLineDash([]);
+    // Center tick mark
     ctx.strokeStyle = 'rgba(255,255,255,0.9)';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -212,15 +225,13 @@
   }
 
   function drawGround() {
+    if (state === 'playing') {
+      groundX -= PIPE_SPEED;
+      if (groundX <= -20) groundX = 0;
+    }
 
-    const grad = ctx.createLinearGradient(0, SKY_HEIGHT, 0, canvas.height);
-    grad.addColorStop(0, '#fdcb6e');
-    grad.addColorStop(1, '#e17055');
-    ctx.fillStyle = grad;
+    ctx.fillStyle = '#00b894';
     ctx.fillRect(0, SKY_HEIGHT, canvas.width, GROUND_HEIGHT);
-
-    ctx.fillStyle = '#55efc4';
-    ctx.fillRect(0, SKY_HEIGHT, canvas.width, 14);
 
     ctx.fillStyle = '#00b894';
     for (let gx = groundX; gx < canvas.width; gx += 20) {
@@ -247,8 +258,8 @@
     ctx.textAlign = 'center';
     if (state === 'idle') {
       ctx.fillStyle = '#fdcb6e';
-      ctx.font = 'bold 32px Arial';
-      ctx.fillText('SEQUENCE TAP BIRD', canvas.width / 2, canvas.height / 2 - 70);
+      ctx.font = 'bold 38px Arial';
+      ctx.fillText('SQUARE BIRD', canvas.width / 2, canvas.height / 2 - 70);
       ctx.fillStyle = '#fff';
       ctx.font = '20px Arial';
       ctx.fillText('Press SPACE or tap', canvas.width / 2, canvas.height / 2 - 20);
@@ -262,12 +273,10 @@
       ctx.font = '22px Arial';
       ctx.fillText('Score: ' + score, canvas.width / 2, canvas.height / 2 - 30);
       ctx.fillStyle = '#fdcb6e';
-      ctx.fillText('Best: ' + best, canvas.width / 2, canvas.height / 2 + 5);
-      ctx.fillStyle = '#a29bfe';
-      ctx.font = '18px Arial';
-      ctx.fillText('Taps: ' + flapCount, canvas.width / 2, canvas.height / 2 + 32);
+      ctx.fillText('Best: ' + best, canvas.width / 2, canvas.height / 2 + 10);
 
       ctx.fillStyle = '#dfe6e9';
+      ctx.font = '18px Arial';
       ctx.fillText('Press SPACE or tap', canvas.width / 2, canvas.height / 2 + 60);
       ctx.fillText('to play again', canvas.width / 2, canvas.height / 2 + 85);
     }
@@ -278,15 +287,14 @@
     flapDots.push({ x: bird.x, y: bird.y, n: flapCount });
   }
 
+  function updateFlapDots() {}
+
   function drawFlapDots() {
     flapDots.forEach(d => {
-      // Dot
       ctx.fillStyle = '#000';
       ctx.beginPath();
       ctx.arc(d.x, d.y, 5, 0, Math.PI * 2);
       ctx.fill();
-
-      // Number
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 8px Arial';
       ctx.textAlign = 'center';
@@ -335,21 +343,22 @@
       frame++;
       bird.update();
       updateClouds();
+      updateFlapDots();
 
       if (state === 'playing') {
         updatePipes();
 
-        pipes.forEach(p => {
-          if (!p.scored && p.x + PIPE_WIDTH < bird.x) {
-            p.scored = true;
-            score++;
-            if (score > best) best = score;
-          }
-        });
+      pipes.forEach(p => {
+        if (!p.scored && p.x + PIPE_WIDTH < bird.x) {
+          p.scored = true;
+          score++;
+          if (score > best) best = score;
+        }
+      });
 
-        if (checkCollision()) state = 'dead';
-      }
+      if (checkCollision()) state = 'dead';
     }
+    } // end !paused
 
     drawSky();
     drawClouds();
@@ -358,25 +367,39 @@
     drawFlapDots();
     bird.draw();
 
+    // Vertical line always following the bird — top to ground
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(bird.x, 0);
+    ctx.lineTo(bird.x, SKY_HEIGHT);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Dot at top
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(bird.x, 0, 4, 0, Math.PI * 2);
+    ctx.fill();
+    // Dot at ground
+    ctx.beginPath();
+    ctx.arc(bird.x, SKY_HEIGHT, 4, 0, Math.PI * 2);
+    ctx.fill();
+    // Horizontal line across bird's current Y
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(0, bird.y);
+    ctx.lineTo(canvas.width, bird.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // Paused label only when paused
     if (paused) {
       ctx.save();
-      ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([6, 4]);
-      ctx.beginPath();
-      ctx.moveTo(bird.x, 0);
-      ctx.lineTo(bird.x, SKY_HEIGHT);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      // Dot at top
-      ctx.fillStyle = '#000';
-      ctx.beginPath();
-      ctx.arc(bird.x, 0, 4, 0, Math.PI * 2);
-      ctx.fill();
-      // Dot at ground
-      ctx.beginPath();
-      ctx.arc(bird.x, SKY_HEIGHT, 4, 0, Math.PI * 2);
-      ctx.fill();
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(bird.x + 10, bird.y - 14, 58, 20);
       ctx.fillStyle = '#fff';
